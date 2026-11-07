@@ -28,15 +28,28 @@
         <small>Contas a receber</small>
     </div>
 
-    <nav id="menu">
+    <nav id="menu" aria-label="Navegação principal">
         <button type="button" class="nav-btn active" data-view="calculadora">Calculadora</button>
+        <button type="button" class="nav-btn" data-view="reversa">Calculadora Reversa</button>
         <button type="button" class="nav-btn" data-view="custas">Custas e Protestos</button>
         <button type="button" class="nav-btn" data-view="consulta-avancada">Consulta Avançada</button>
-        <button type="button" class="nav-btn" data-view="planilha" hidden>Planilha</button>
-        <button type="button" class="nav-btn" data-view="whatsapp" hidden>WhatsApp</button>
-        <button type="button" class="nav-btn" data-view="email" hidden>E-mail</button>
-        <button type="button" class="nav-btn" id="nav-acesso" data-view="acesso">🔒 Acesso restrito</button>
-        <button type="button" class="btn-mini" id="ac-sair" hidden>Sair</button>
+        <button type="button" class="nav-btn" id="nav-acesso" data-view="acesso">
+            <svg class="ico-nav" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            Acesso restrito
+        </button>
+
+        <div class="nav-grupo" id="nav-restrito" hidden>
+            <button type="button" class="nav-btn" id="nav-restrito-btn" aria-haspopup="true" aria-expanded="false" aria-controls="nav-submenu">
+                Restrito
+                <svg class="ico-nav ico-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="nav-submenu" id="nav-submenu" role="menu" hidden>
+                <button type="button" class="nav-sub" role="menuitem" data-view="planilha">Planilha</button>
+                <button type="button" class="nav-sub" role="menuitem" data-view="whatsapp">WhatsApp</button>
+                <button type="button" class="nav-sub" role="menuitem" data-view="email">E-mail</button>
+                <button type="button" class="nav-sub nav-sair" role="menuitem" id="ac-sair">Sair</button>
+            </div>
+        </div>
     </nav>
 
     <div class="clock">
@@ -191,6 +204,116 @@
 </div>
 
 <!-- =====================================================
+     VISÃO — CALCULADORA REVERSA (ÚLTIMO DIA PARA PAGAR)
+===================================================== -->
+<div class="view" id="view-reversa">
+
+    <!-- Aviso do dia: atualiza sozinho quando a data muda -->
+    <section class="card aviso-dia" id="rv-hoje" aria-live="polite"></section>
+
+    <section class="card calculator">
+        <div class="title">
+            <div class="number">01</div>
+            <div>
+                <h2>Calculadora Reversa</h2>
+                <p>Informe o dia da cobrança e veja quais vencimentos têm esse dia como último dia para pagar sem ir a cartório.</p>
+            </div>
+        </div>
+
+        <div class="fields fields-3">
+            <div class="field">
+                <label for="rv-data">Dia da cobrança</label>
+                <input type="date" id="rv-data">
+                <small>Preenchido com a data de hoje.</small>
+            </div>
+
+            <div class="field">
+                <label for="rv-outro">Outro banco <span style="font-weight:400">— opcional</span></label>
+                <select id="rv-outro">
+                    <option value="nao" selected>Não usar</option>
+                    <option value="aguarda">Aguarda o próximo dia útil (como Santander/Itaú)</option>
+                    <option value="antecipa">Antecipa para o dia útil anterior (como Banco do Brasil)</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="rv-feriados">Feriados extras <span style="font-weight:400">— opcional</span></label>
+                <input type="text" id="rv-feriados" autocomplete="off" placeholder="Ex.: 25/01, 09/07/2026">
+                <small>Municipais ou estaduais. Sem o ano, vale todo ano.</small>
+            </div>
+        </div>
+
+        <div id="rv-aviso" class="form-msg aviso" role="status" hidden></div>
+        <div id="rv-resultado"></div>
+    </section>
+
+    <!-- Conferência em lote: nada é salvo, os dados ficam só na tela -->
+    <section class="card" id="rv-lote">
+        <div class="title">
+            <div class="number cyan">02</div>
+            <div>
+                <h2>Conferência em lote</h2>
+                <p>Cole uma linha por boleto e veja o último dia para pagar de cada um.</p>
+            </div>
+        </div>
+
+        <div class="field">
+            <label for="lt-entrada">Boletos</label>
+            <textarea id="lt-entrada" rows="7" spellcheck="false" autocomplete="off"
+                      placeholder="Cliente; vencimento (dd/mm/aaaa); banco&#10;Hospital Santa Clara; 02/11/2026; BB&#10;Clínica Aurora; 03/11/2026; Santander&#10;Laboratório Vita; 04/11/2026; Itaú"></textarea>
+            <small>Formato: cliente; vencimento; banco (BB, Santander ou Itaú). Também aceita colar direto do Excel (colunas separadas por TAB). O resultado atualiza sozinho enquanto você digita ou cola.</small>
+        </div>
+
+        <div class="lt-botoes">
+            <button type="button" class="primary" id="lt-calcular"><span>CALCULAR EM LOTE</span><strong>→</strong></button>
+            <button type="button" class="secondary" id="lt-colar">Colar da área de transferência</button>
+        </div>
+
+        <div id="lt-msg" class="form-msg" role="status" hidden></div>
+
+        <div id="lt-saida" hidden>
+            <div class="totais lt-totais" id="lt-totais"></div>
+            <div class="tl-legenda" id="lt-legenda" aria-hidden="true"></div>
+            <div class="tabela-wrap">
+                <table class="tabela lote-tab">
+                    <thead><tr><th>Cliente</th><th>Vencimento</th><th>Banco</th><th>Último dia</th><th>Situação</th><th>Prazo</th></tr></thead>
+                    <tbody id="lt-corpo"></tbody>
+                </table>
+            </div>
+            <div class="lt-botoes lt-export">
+                <button type="button" class="primary excel" id="lt-excel"><span>EXPORTAR EXCEL</span><strong>📊</strong></button>
+                <button type="button" class="primary relatorio" id="lt-teams"><span>COPIAR PARA O TEAMS</span><strong>📋</strong></button>
+            </div>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="title">
+            <div class="number orange">03</div>
+            <div>
+                <h2>Regras por banco</h2>
+                <p>O prazo é de 5 dias corridos, contados do vencimento (dia 0).</p>
+            </div>
+        </div>
+
+        <div class="rules">
+            <div><strong>Banco do Brasil</strong><p>Se o 5º dia cair em fim de semana ou feriado, o último dia para pagar é o dia útil anterior. O título vai a cartório no próximo dia útil.</p></div>
+            <div><strong>Santander</strong><p>Se o 5º dia cair em fim de semana ou feriado, o banco aguarda o próximo dia útil e aceita o pagamento normalmente.</p></div>
+            <div><strong>Itaú</strong><p>Mesma regra do Santander.</p></div>
+            <div><strong>Feriados</strong><p>Já considera os nacionais, Carnaval (seg e ter), Sexta-feira Santa e Corpus Christi. Feriados locais entram no campo acima.</p></div>
+        </div>
+
+        <div class="warning">
+            <strong>⚠️ Importante</strong>
+            <p>
+                Estimativa baseada nas regras acima. Confirme com o banco em casos de feriado local
+                ou de regra diferente da informada.
+            </p>
+        </div>
+    </section>
+</div>
+
+<!-- =====================================================
      VISÃO 2 — CUSTAS E PROTESTOS (MÚLTIPLOS TÍTULOS)
 ===================================================== -->
 <div class="view" id="view-custas">
@@ -236,6 +359,21 @@
                 <div id="tipo-aviso" class="form-msg aviso" hidden></div>
             </fieldset>
 
+            <!-- Custas: o atraso pode vir de duas datas ou de uma quantidade fixa de dias -->
+            <fieldset class="tipo-box" id="grupo-modo-dias">
+                <legend>Como informar o tempo de atraso?</legend>
+                <div class="radio-group">
+                    <label class="radio-card">
+                        <input type="radio" name="modo-dias" value="datas" checked>
+                        <span>Por datas (vencimento e pagamento)</span>
+                    </label>
+                    <label class="radio-card">
+                        <input type="radio" name="modo-dias" value="fixo">
+                        <span>Quantidade de dias fixa</span>
+                    </label>
+                </div>
+            </fieldset>
+
             <div class="fields fields-3">
                 <div class="field">
                     <label for="t-codigo">Código do Cliente</label>
@@ -275,14 +413,44 @@
                     </select>
                 </div>
 
-                <div class="field">
+                <div class="field" id="campo-vencimento">
                     <label for="t-vencimento">Data de Vencimento</label>
                     <input type="date" id="t-vencimento" required>
                 </div>
 
-                <div class="field">
+                <div class="field" id="campo-pagamento">
                     <label for="t-pagamento">Data de Pagamento (ou data atual)</label>
                     <input type="date" id="t-pagamento" required>
+                </div>
+
+                <div class="field" id="campo-dias" hidden>
+                    <label for="t-dias">Dias de atraso</label>
+                    <input type="number" id="t-dias" min="0" step="1" inputmode="numeric" list="lista-dias" autocomplete="off" placeholder="Digite ou escolha. Ex.: 30">
+                    <datalist id="lista-dias">
+                        <option value="5"></option>
+                        <option value="10"></option>
+                        <option value="15"></option>
+                        <option value="30"></option>
+                        <option value="45"></option>
+                        <option value="60"></option>
+                        <option value="90"></option>
+                    </datalist>
+                    <small>Usado no lugar das datas de vencimento e pagamento.</small>
+                </div>
+
+                <!-- Protesto: custos extras (opcional) -->
+                <div class="field" id="campo-extra-modo" hidden>
+                    <label for="t-extra-modo">Custos Extras — forma de cálculo</label>
+                    <select id="t-extra-modo">
+                        <option value="fixo" selected>Valor fixo (R$)</option>
+                        <option value="pct">Porcentagem (%)</option>
+                    </select>
+                </div>
+
+                <div class="field" id="campo-extra" hidden>
+                    <label for="t-extra" id="lbl-extra">Custos Extras (R$) <span style="font-weight:400">— opcional</span></label>
+                    <input type="text" id="t-extra" inputmode="decimal" autocomplete="off" placeholder="Ex.: 35,00 (em branco se não houver)">
+                    <small id="dica-extra">Somado uma única vez ao valor do protesto.</small>
                 </div>
             </div>
 
@@ -314,6 +482,7 @@
             <div><small>TÍTULOS</small><strong id="tot-titulos">0</strong></div>
             <div><small>VALOR ORIGINAL</small><strong id="tot-original">R$ 0,00</strong></div>
             <div class="destaque"><small id="lbl-juros">CUSTAS</small><strong id="tot-juros">R$ 0,00</strong></div>
+            <div class="destaque" id="box-extras" hidden><small>CUSTOS EXTRAS</small><strong id="tot-extras">R$ 0,00</strong></div>
             <div class="total"><small>TOTAL ATUALIZADO</small><strong id="tot-atualizado">R$ 0,00</strong></div>
         </div>
 

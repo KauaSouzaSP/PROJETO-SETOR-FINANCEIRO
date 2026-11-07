@@ -10,6 +10,9 @@ document.addEventListener("DOMContentLoaded", () => {
     CalculadoraSimples.iniciar();
     CustasUI.iniciar();
     ConsultaCNPJ.iniciar();
+    ReversaUI.iniciar();
+    AvisoHoje.iniciar();
+    ReversaLote.iniciar();
 
 });
 
@@ -42,6 +45,12 @@ function dataParaInput(data) {
 
 function formatarData(data) {
     return data.toLocaleDateString("pt-BR");
+}
+
+/* Data em AAAA-MM-DD para exibição. Títulos lançados com "dias fixos"
+   não têm datas: nesse caso mostra um traço. */
+function formatarDataIso(iso) {
+    return iso ? formatarData(criarData(iso)) : "—";
 }
 
 function adicionarDias(data, quantidade) {
@@ -125,9 +134,14 @@ const Rotulos = {
         const base = formatarPercentual(titulo.percentual) +
             (titulo.periodo === "dia" ? " ao dia" : " ao mês");
 
-        return titulo.multaPercentual > 0
+        const comMulta = titulo.multaPercentual > 0
             ? `${formatarPercentual(titulo.multaPercentual)} multa + ${base}`
             : base;
+
+        /* Custos extras em porcentagem entram na descrição da taxa. */
+        return titulo.extraModo === "pct" && titulo.extraValor > 0
+            ? `${comMulta} + ${formatarPercentual(titulo.extraValor)} custos extras`
+            : comMulta;
     },
 
     tituloRelatorio(tipo) {
@@ -143,10 +157,14 @@ const Rotulos = {
 
 const Navegacao = {
 
+    RESTRITAS: ["planilha", "whatsapp", "email"],
+
     iniciar() {
-        document.querySelectorAll(".nav-btn").forEach(botao => {
+        document.querySelectorAll("#menu [data-view]").forEach(botao => {
             botao.addEventListener("click", () => this.mostrar(botao.dataset.view));
         });
+
+        this.iniciarSubmenu();
 
         const inicial = location.hash.replace("#", "");
         this.mostrar(get(`view-${inicial}`) ? inicial : "calculadora", false);
@@ -157,13 +175,66 @@ const Navegacao = {
             v.classList.toggle("active", v.id === `view-${nome}`)
         );
 
-        document.querySelectorAll(".nav-btn").forEach(b =>
+        document.querySelectorAll("#menu [data-view]").forEach(b =>
             b.classList.toggle("active", b.dataset.view === nome)
         );
+
+        const grupo = get("nav-restrito-btn");
+        if (grupo) grupo.classList.toggle("active", this.RESTRITAS.includes(nome));
+
+        this.fecharSubmenu();
 
         if (atualizarHash) history.replaceState(null, "", `#${nome}`);
 
         window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+
+    /* Submenu "Restrito": posicionado com fixed para não ser cortado pela rolagem do menu. */
+    iniciarSubmenu() {
+        const botao = get("nav-restrito-btn");
+        const menu = get("nav-submenu");
+        if (!botao || !menu) return;
+
+        botao.addEventListener("click", evento => {
+            evento.stopPropagation();
+            if (menu.hidden) this.abrirSubmenu();
+            else this.fecharSubmenu();
+        });
+
+        document.addEventListener("click", evento => {
+            if (!menu.hidden && !menu.contains(evento.target)) this.fecharSubmenu();
+        });
+
+        document.addEventListener("keydown", evento => {
+            if (evento.key === "Escape" && !menu.hidden) {
+                this.fecharSubmenu();
+                botao.focus();
+            }
+        });
+
+        window.addEventListener("resize", () => this.fecharSubmenu());
+        window.addEventListener("scroll", () => this.fecharSubmenu(), { passive: true });
+        get("menu").addEventListener("scroll", () => this.fecharSubmenu(), { passive: true });
+    },
+
+    abrirSubmenu() {
+        const botao = get("nav-restrito-btn");
+        const menu = get("nav-submenu");
+        const caixa = botao.getBoundingClientRect();
+
+        menu.hidden = false;
+        menu.style.top = `${caixa.bottom + 4}px`;
+        menu.style.left = `${Math.max(8, Math.min(caixa.left, window.innerWidth - menu.offsetWidth - 8))}px`;
+        botao.setAttribute("aria-expanded", "true");
+    },
+
+    fecharSubmenu() {
+        const botao = get("nav-restrito-btn");
+        const menu = get("nav-submenu");
+        if (!botao || !menu || menu.hidden) return;
+
+        menu.hidden = true;
+        botao.setAttribute("aria-expanded", "false");
     }
 
 };
@@ -315,10 +386,22 @@ const Custas = {
          por mês: valor × (% ÷ 100) × (dias vencidos ÷ 30)
 
        No modo mensal, o mês é de 30 dias e a conta é proporcional aos dias.
-       Se o pagamento for anterior ao vencimento, dias = 0 e o valor = 0. */
-    calcularEncargos({ valorCentavos, vencimento, pagamento, percentual, periodo, multa = 0 }) {
-        const diasBrutos = diferencaDias(criarData(vencimento), criarData(pagamento));
+       Se o pagamento for anterior ao vencimento, dias = 0 e o valor = 0.
+
+       Dias fixos: se "diasFixos" for informado (Custas), ele substitui o
+       intervalo entre as datas e as fórmulas seguem iguais.
+
+       Custos extras (Protesto, opcionais): somados UMA vez ao total, por
+       valor fixo (R$) ou por porcentagem do valor original do título. */
+    calcularEncargos({ valorCentavos, vencimento, pagamento, diasFixos = null, percentual, periodo, multa = 0, extraModo = "fixo", extra = 0 }) {
+        const diasBrutos = diasFixos !== null
+            ? Math.floor(diasFixos)
+            : diferencaDias(criarData(vencimento), criarData(pagamento));
         const dias = Math.max(0, diasBrutos);
+
+        const extraCentavos = extra > 0
+            ? (extraModo === "pct" ? Math.round(valorCentavos * (extra / 100)) : Math.round(extra * 100))
+            : 0;
 
         /* Multa fixa: aplicada UMA única vez, somente quando há atraso. */
         const multaCentavos = dias > 0 && multa > 0
@@ -337,7 +420,8 @@ const Custas = {
             multaCentavos,
             jurosDiariosCentavos,
             jurosCentavos,
-            totalCentavos: valorCentavos + jurosCentavos
+            extraCentavos,
+            totalCentavos: valorCentavos + jurosCentavos + extraCentavos
         };
     },
 
@@ -364,6 +448,7 @@ const Custas = {
                     titulos: [],
                     subtotalOriginal: 0,
                     subtotalJuros: 0,
+                    subtotalExtras: 0,
                     subtotalAtualizado: 0
                 });
             }
@@ -372,6 +457,7 @@ const Custas = {
             grupo.titulos.push(titulo);
             grupo.subtotalOriginal += titulo.valorCentavos;
             grupo.subtotalJuros += titulo.jurosCentavos;
+            grupo.subtotalExtras += titulo.extraCentavos || 0;
             grupo.subtotalAtualizado += titulo.totalCentavos;
         });
 
@@ -383,8 +469,9 @@ const Custas = {
             titulos: total.titulos + grupo.titulos.length,
             original: total.original + grupo.subtotalOriginal,
             juros: total.juros + grupo.subtotalJuros,
+            extras: total.extras + grupo.subtotalExtras,
             atualizado: total.atualizado + grupo.subtotalAtualizado
-        }), { titulos: 0, original: 0, juros: 0, atualizado: 0 });
+        }), { titulos: 0, original: 0, juros: 0, extras: 0, atualizado: 0 });
     }
 
 };
@@ -519,6 +606,11 @@ const CustasUI = {
         });
 
         get("t-periodo").addEventListener("change", () => this.atualizarRotulos());
+        get("t-extra-modo").addEventListener("change", () => this.atualizarRotulos());
+
+        document.querySelectorAll('input[name="modo-dias"]').forEach(radio => {
+            radio.addEventListener("change", () => this.atualizarRotulos());
+        });
 
         get("btn-limpar").addEventListener("click", () => {
             if (Armazenamento.titulos.length === 0) return;
@@ -592,17 +684,44 @@ const CustasUI = {
         }
     },
 
+    /* Como o atraso é informado: "datas" (padrão) ou "fixo" (quantidade de dias).
+       A opção de dias fixos existe apenas para Custas. */
+    modoDias() {
+        if (this.tipoAtual() !== "Custas") return "datas";
+        return document.querySelector('input[name="modo-dias"]:checked').value;
+    },
+
     atualizarRotulos() {
         const tipo = this.tipoAtual();
+        const prot = tipo === "Protesto";
+        const fixo = this.modoDias() === "fixo";
+        const extraPct = get("t-extra-modo").value === "pct";
 
         get("lbl-juros").textContent = Rotulos.encargo(tipo).toUpperCase();
 
         /* A caixa "mostrar porcentagem" existe apenas para Protesto (sigiloso). */
-        get("opcao-pct").hidden = tipo !== "Protesto";
+        get("opcao-pct").hidden = !prot;
+
+        /* Custas: alternar entre datas e dias fixos. */
+        get("grupo-modo-dias").hidden = prot;
+        get("campo-vencimento").hidden = fixo;
+        get("campo-pagamento").hidden = fixo;
+        get("campo-dias").hidden = !fixo;
+
+        /* Protesto: custos extras opcionais, em R$ ou em %. */
+        get("campo-extra-modo").hidden = !prot;
+        get("campo-extra").hidden = !prot;
+        get("lbl-extra").innerHTML = `Custos Extras (${extraPct ? "%" : "R$"}) <span style="font-weight:400">— opcional</span>`;
+        get("t-extra").placeholder = extraPct ? "Ex.: 1,5 (em branco se não houver)" : "Ex.: 35,00 (em branco se não houver)";
+        get("dica-extra").textContent = extraPct
+            ? "Porcentagem sobre o valor original, somada uma única vez ao valor do protesto."
+            : "Valor fixo, somado uma única vez ao valor do protesto.";
 
         get("formula-txt").textContent = "multa: valor × (multa % ÷ 100) + " + (get("t-periodo").value === "dia"
             ? "valor × (% ÷ 100) × dias vencidos"
-            : "valor × (% ÷ 100) × (dias vencidos ÷ 30)");
+            : "valor × (% ÷ 100) × (dias vencidos ÷ 30)") +
+            (prot ? " + custos extras (" + (extraPct ? "valor × % ÷ 100" : "valor fixo em R$") + ")" : "") +
+            (fixo ? " — dias vencidos informados manualmente" : "");
     },
 
     mensagem(texto, tipo = "erro") {
@@ -620,7 +739,7 @@ const CustasUI = {
     },
 
     marcarInvalidos(ids) {
-        ["t-codigo", "t-razao", "t-numero", "t-valor", "t-multa", "t-percentual", "t-vencimento", "t-pagamento"]
+        ["t-codigo", "t-razao", "t-numero", "t-valor", "t-multa", "t-percentual", "t-vencimento", "t-pagamento", "t-dias", "t-extra"]
             .forEach(id => get(id).classList.toggle("invalid", ids.includes(id)));
     },
 
@@ -637,6 +756,17 @@ const CustasUI = {
         const pagamento = get("t-pagamento").value;
         const tipo = this.tipoSelecionado();
 
+        /* Dias fixos (somente Custas): no lugar das datas. */
+        const modoDias = tipo === "Custas" ? this.modoDias() : "datas";
+        const fixo = modoDias === "fixo";
+        const diasTexto = get("t-dias").value.trim();
+        const diasFixos = diasTexto === "" ? NaN : lerNumero(diasTexto);
+
+        /* Custos extras (somente Protesto): opcionais, em R$ ou em %. */
+        const extraModo = get("t-extra-modo").value === "pct" ? "pct" : "fixo";
+        const extraTexto = get("t-extra").value.trim();
+        const extra = tipo === "Protesto" && extraTexto !== "" ? lerNumero(extraTexto) : 0;
+
         const invalidos = [];
 
         if (!codigo) invalidos.push("t-codigo");
@@ -645,13 +775,19 @@ const CustasUI = {
         if (!(valor > 0)) invalidos.push("t-valor");
         if (!(percentual >= 0)) invalidos.push("t-percentual");
         if (!(multa >= 0)) invalidos.push("t-multa");
-        if (!vencimento) invalidos.push("t-vencimento");
-        if (!pagamento) invalidos.push("t-pagamento");
+        if (fixo) {
+            if (!(Number.isInteger(diasFixos) && diasFixos >= 0)) invalidos.push("t-dias");
+        } else {
+            if (!vencimento) invalidos.push("t-vencimento");
+            if (!pagamento) invalidos.push("t-pagamento");
+        }
+        if (!(extra >= 0)) invalidos.push("t-extra");
 
         this.marcarInvalidos(invalidos);
 
         if (invalidos.length > 0) {
-            this.mensagem("Preencha todos os campos corretamente (valor maior que zero e porcentagem válida).");
+            this.mensagem("Preencha todos os campos corretamente (valor maior que zero, porcentagens válidas" +
+                (fixo ? " e dias de atraso inteiros" : "") + ").");
             return;
         }
 
@@ -671,7 +807,11 @@ const CustasUI = {
         const valorCentavos = Math.round(valor * 100);
 
         const encargos = Custas.calcularEncargos({
-            valorCentavos, vencimento, pagamento, percentual, periodo, multa
+            valorCentavos,
+            vencimento: fixo ? "" : vencimento,
+            pagamento: fixo ? "" : pagamento,
+            diasFixos: fixo ? diasFixos : null,
+            percentual, periodo, multa, extraModo, extra
         });
 
         Armazenamento.adicionar({
@@ -681,19 +821,25 @@ const CustasUI = {
             razaoSocial: razao,
             numero,
             valorCentavos,
-            vencimento,
-            pagamento,
+            modoDias,
+            vencimento: fixo ? "" : vencimento,
+            pagamento: fixo ? "" : pagamento,
             percentual,
             periodo,
             multaPercentual: multa,
             multaCentavos: encargos.multaCentavos,
+            extraModo,
+            extraValor: extra,
+            extraCentavos: encargos.extraCentavos,
             dias: encargos.dias,
             jurosCentavos: encargos.jurosCentavos,
             totalCentavos: encargos.totalCentavos
         });
 
         if (encargos.dias === 0) {
-            this.mensagem("Título adicionado. A data de pagamento não é posterior ao vencimento, então não há valor a acrescentar.", "aviso");
+            this.mensagem(fixo
+                ? "Título adicionado. Com 0 dia(s) de atraso, não há valor a acrescentar."
+                : "Título adicionado. A data de pagamento não é posterior ao vencimento, então não há valor a acrescentar.", "aviso");
         } else {
             this.mensagem("Título adicionado à lista.", "ok");
         }
@@ -717,6 +863,7 @@ const CustasUI = {
 
         get("totais").hidden = vazio;
         get("totais").classList.toggle("protesto", Armazenamento.tipoLista() === "Protesto");
+        get("box-extras").hidden = Armazenamento.tipoLista() !== "Protesto";
 
         ["btn-imprimir", "btn-pdf", "btn-excel"].forEach(id => {
             get(id).disabled = vazio;
@@ -735,6 +882,7 @@ const CustasUI = {
         get("tot-titulos").textContent = total.titulos;
         get("tot-original").textContent = formatarMoeda(total.original);
         get("tot-juros").textContent = formatarMoeda(total.juros);
+        get("tot-extras").textContent = formatarMoeda(total.extras);
         get("tot-atualizado").textContent = formatarMoeda(total.atualizado);
 
         container.innerHTML = grupos.map(grupo => this.htmlCliente(grupo)).join("");
@@ -747,15 +895,19 @@ const CustasUI = {
         const prot = Armazenamento.tipoLista() === "Protesto";
         const rz = prot ? " destaque-p" : "";
 
+        /* Protesto: coluna extra com os custos extras de cada título. */
+        const colExtras = t => prot ? `<td class="num juros">${formatarMoeda(t.extraCentavos || 0)}</td>` : "";
+
         const linhas = grupo.titulos.map(t => `
             <tr>
                 <td>${escaparHTML(t.numero)}</td>
-                <td>${formatarData(criarData(t.vencimento))}</td>
-                <td>${formatarData(criarData(t.pagamento))}</td>
+                <td>${formatarDataIso(t.vencimento)}</td>
+                <td>${formatarDataIso(t.pagamento)}</td>
                 <td class="num${rz}">${formatarMoeda(t.valorCentavos)}</td>
                 <td class="num dias-atraso${rz}">${t.dias}</td>
                 <td class="num">${escaparHTML(Rotulos.taxa(t))}</td>
                 <td class="num juros">${formatarMoeda(t.jurosCentavos)}</td>
+                ${colExtras(t)}
                 <td class="num atualizado${rz}">${formatarMoeda(t.totalCentavos)}</td>
                 <td><button type="button" class="btn-remover" title="Remover título"
                         data-remover-titulo="${escaparHTML(t.id)}">×</button></td>
@@ -789,6 +941,7 @@ const CustasUI = {
                                 <th class="num">Dias</th>
                                 <th class="num">Taxa</th>
                                 <th class="num">${escaparHTML(encargo)}</th>
+                                ${prot ? `<th class="num">Custos extras</th>` : ""}
                                 <th class="num">Total atualizado</th>
                                 <th></th>
                             </tr>
@@ -801,6 +954,7 @@ const CustasUI = {
                                 <td></td>
                                 <td></td>
                                 <td class="num juros">${formatarMoeda(grupo.subtotalJuros)}</td>
+                                ${prot ? `<td class="num juros">${formatarMoeda(grupo.subtotalExtras)}</td>` : ""}
                                 <td class="num atualizado${rz}">${formatarMoeda(grupo.subtotalAtualizado)}</td>
                                 <td></td>
                             </tr>
@@ -893,6 +1047,8 @@ const Relatorio = {
             /* Custas: sempre mostra. Protesto: só se a caixa estiver marcada. */
             mostrarPercentual: tipo === "Custas" || get("mostrar-pct").checked,
             grupos,
+            /* Coluna/linha de custos extras só aparece no Protesto, quando há algum valor. */
+            temExtras: tipo === "Protesto" && grupos.some(g => g.subtotalExtras > 0),
             total: Custas.totalGeral(grupos)
         };
     },
@@ -938,6 +1094,11 @@ const Relatorio = {
             /* Protesto: Título · Vencimento · Valor original · Juros · Dias de atraso · Valor total */
             colunas.push({ id: "valor", titulo: "Valor original", formato: "moeda", largura: 17, realce: true });
             colunas.push({ id: "juros", titulo: this.rotuloJuros(modelo), formato: "moeda", largura: 16, destaque: true });
+
+            if (modelo.temExtras) {
+                colunas.push({ id: "extras", titulo: "Custos extras", formato: "moeda", largura: 16, destaque: true });
+            }
+
             colunas.push({ id: "dias", titulo: "Dias de atraso", formato: "inteiro", largura: 12, realce: true });
 
             if (modelo.mostrarPercentual) {
@@ -981,6 +1142,7 @@ const Relatorio = {
             case "dias": return titulo.dias;
             case "taxa": return Rotulos.taxa(titulo);
             case "juros": return titulo.jurosCentavos;
+            case "extras": return titulo.extraCentavos || 0;
             case "total": return titulo.totalCentavos;
             default: return "";
         }
@@ -990,6 +1152,7 @@ const Relatorio = {
         switch (id) {
             case "valor": return grupo.subtotalOriginal;
             case "juros": return grupo.subtotalJuros;
+            case "extras": return grupo.subtotalExtras;
             case "total": return grupo.subtotalAtualizado;
             default: return null;
         }
@@ -999,6 +1162,7 @@ const Relatorio = {
         switch (id) {
             case "valor": return total.original;
             case "juros": return total.juros;
+            case "extras": return total.extras;
             case "total": return total.atualizado;
             default: return null;
         }
@@ -1008,7 +1172,7 @@ const Relatorio = {
         if (valor === null || valor === undefined) return "";
 
         switch (coluna.formato) {
-            case "data": return formatarData(criarData(valor));
+            case "data": return formatarDataIso(valor);
             case "moeda": return formatarMoeda(valor);
             case "inteiro": return String(valor);
             default: return String(valor);
@@ -1016,7 +1180,8 @@ const Relatorio = {
     },
 
     nota(modelo) {
-        const base = "Estimativa sujeita à conferência com os valores oficiais de cartório.";
+        const base = (modelo.temExtras ? "Os custos extras estão discriminados e somados ao valor total. " : "") +
+            "Estimativa sujeita à conferência com os valores oficiais de cartório.";
 
         return modelo.mostrarPercentual
             ? "A porcentagem é aplicada sobre o valor do título e o resultado é acumulado por dia ou por mês de atraso " +
@@ -1103,6 +1268,8 @@ const Relatorio = {
     * { box-sizing: border-box; }
     body { margin: 0; padding: 32px; font-family: Arial, Helvetica, sans-serif; color: #111827; font-size: 12px; }
     header { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 14px; border-bottom: 3px solid #1A365D; margin-bottom: 22px; }
+    .marca { display: flex; align-items: center; gap: 14px; }
+    .marca img { height: 44px; width: auto; max-width: 90px; object-fit: contain; }
     header h1 { margin: 0; font-size: 22px; color: #1A365D; }
     header p { margin: 4px 0 0; color: #6b7280; font-size: 11px; }
     .meta { text-align: right; color: #374151; font-size: 11px; line-height: 1.7; }
@@ -1137,9 +1304,12 @@ const Relatorio = {
     <div class="no-print"><button onclick="window.print()">Imprimir / Salvar como PDF</button></div>
 
     <header>
-        <div>
-            <h1>${escaparHTML(titulo)}</h1>
-            <p>Cálculo sobre títulos vencidos</p>
+        <div class="marca">
+            <img src="${Logo.DATA_URL}" alt="Medihosp" onerror="this.style.display='none'">
+            <div>
+                <h1>${escaparHTML(titulo)}</h1>
+                <p>Cálculo sobre títulos vencidos</p>
+            </div>
         </div>
         <div class="meta">
             Tipo: <span class="tag">${escaparHTML(modelo.tipo)}</span><br>
@@ -1159,6 +1329,7 @@ const Relatorio = {
         <div class="vals">
             Valor original: ${formatarMoeda(modelo.total.original)}<br>
             <span class="hl">${escaparHTML(this.rotuloJuros(modelo))}: <b>${formatarMoeda(modelo.total.juros)}</b></span><br>
+            ${modelo.temExtras ? `<span class="hl">Custos extras: <b>${formatarMoeda(modelo.total.extras)}</b></span><br>` : ""}
             ${modelo.tipo === "Protesto"
                 ? `<span class="hl hl2">Total do protesto: <b>${formatarMoeda(modelo.total.atualizado)}</b></span>`
                 : `Total atualizado: ${formatarMoeda(modelo.total.atualizado)}`}
@@ -1213,7 +1384,6 @@ const Relatorio = {
         const margem = 14;
         const larguraUtil = 210 - margem * 2;
         const alturaPagina = 297;
-        const idxJuros = colunas.findIndex(c => c.destaque);
         const t = textoSimples;
 
         /* Cabeçalho */
@@ -1229,6 +1399,13 @@ const Relatorio = {
         doc.text(`Responsável pelo cálculo: ${modelo.responsavel}`, margem, 30);
         doc.text(`Emitido em ${modelo.emissao.toLocaleString("pt-BR")}`, 210 - margem, 25, { align: "right" });
         doc.text(`${modelo.grupos.length} cliente(s) - ${modelo.total.titulos} título(s)`, 210 - margem, 30, { align: "right" });
+
+        /* Logo no canto superior direito. Se falhar, o relatório sai igual, sem o logo. */
+        try {
+            doc.addImage(Logo.DATA_URL, "PNG", 210 - margem - 18, 7, 18, 10.5);
+        } catch (erro) {
+            console.warn("Logo não adicionado ao PDF:", erro);
+        }
 
         doc.setDrawColor(26, 54, 93);
         doc.setLineWidth(0.8);
@@ -1287,7 +1464,7 @@ const Relatorio = {
                         dados.cell.styles.fontStyle = "bold";
                     }
 
-                    if (dados.column.index === idxJuros) {
+                    if (coluna && coluna.destaque) {
                         if (dados.section === "body") {
                             dados.cell.styles.fillColor = [255, 247, 237];
                             dados.cell.styles.textColor = [194, 65, 12];
@@ -1310,7 +1487,8 @@ const Relatorio = {
 
         doc.setFillColor(26, 54, 93);
         const prot = modelo.tipo === "Protesto";
-        const alturaCaixa = prot ? 35 : 26;
+        const ext = prot && modelo.temExtras;
+        const alturaCaixa = prot ? (ext ? 44 : 35) : 26;
         doc.roundedRect(margem, y, larguraUtil, alturaCaixa, 2, 2, "F");
 
         doc.setTextColor(255, 255, 255);
@@ -1336,14 +1514,25 @@ const Relatorio = {
         doc.setTextColor(120, 53, 15);
         doc.text(textoEncargo, 210 - margem - 5, y + yEnc + 5.8, { align: "right" });
 
-        /* Protesto: o total (valor + juros) também é destacado. */
+        /* Protesto com custos extras: linha própria, discriminada antes do total. */
+        if (ext) {
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            doc.setTextColor(255, 255, 255);
+            doc.text(t(`Custos extras: ${formatarMoeda(modelo.total.extras)}`), 210 - margem - 5, y + 23.5, { align: "right" });
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(12);
+        }
+
+        /* Protesto: o total (valor + juros + custos extras) também é destacado. */
         if (prot) {
+            const yTotal = ext ? 28 : 20;
             const textoTotal = t(`Total do protesto: ${formatarMoeda(modelo.total.atualizado)}`);
             const larguraTotal = doc.getTextWidth(textoTotal);
             doc.setFillColor(191, 219, 254);
-            doc.roundedRect(210 - margem - 5 - larguraTotal - 3, y + 20, larguraTotal + 6, 8, 1.5, 1.5, "F");
+            doc.roundedRect(210 - margem - 5 - larguraTotal - 3, y + yTotal, larguraTotal + 6, 8, 1.5, 1.5, "F");
             doc.setTextColor(26, 54, 93);
-            doc.text(textoTotal, 210 - margem - 5, y + 25.8, { align: "right" });
+            doc.text(textoTotal, 210 - margem - 5, y + yTotal + 5.8, { align: "right" });
         }
 
         /* Nota */
@@ -1473,7 +1662,7 @@ const Relatorio = {
                 const valores = colunas.map(c => {
                     const bruto = this.valorCelula(t, c.id);
 
-                    if (c.formato === "data") return dataUTC(bruto);
+                    if (c.formato === "data") return bruto ? dataUTC(bruto) : "—";
                     if (c.formato === "moeda") return bruto / 100;
                     return bruto;
                 });
@@ -1690,25 +1879,30 @@ const Teams = {
 
     /* ---------- conteúdo ---------- */
 
-    /* Colunas do resumo. Protesto: Título · Vencimento · Valor Orig. · Juros · Dias Atraso · Valor Total.
+    /* Colunas do resumo (a primeira é sempre o Código do cliente). Protesto: Título · Vencimento · Valor Orig. · Juros · Dias Atraso · Valor Total.
        Custas: Título · Vencimento · Dias Atraso · Valor Orig. · Custas (valor calculado). */
-    colunasResumo(tipo) {
+    colunasResumo(tipo, temExtras = false) {
         const encargo = Rotulos.encargo(tipo);
         const titulo = t => this.semQuebra(t.numero);
-        const venc = t => formatarData(criarData(t.vencimento));
+        const venc = t => formatarDataIso(t.vencimento);
+        const codigo = t => this.semQuebra(t.codigo || "");
+        const colCodigo = { cab: "Código", dir: false, html: t => escaparHTML(codigo(t)), txt: codigo };
 
         if (tipo === "Protesto") {
             return [
+                colCodigo,
                 { cab: "Título", dir: false, html: t => escaparHTML(titulo(t)), txt: titulo },
                 { cab: "Vencimento", dir: false, html: venc, txt: venc },
                 { cab: "Valor Orig.", dir: true, rel: "azul", html: t => formatarMoeda(t.valorCentavos), txt: t => formatarMoeda(t.valorCentavos) },
                 { cab: "Juros", dir: true, rel: "ambar", html: t => `<b>${formatarMoeda(t.jurosCentavos)}</b>`, txt: t => formatarMoeda(t.jurosCentavos) },
+                ...(temExtras ? [{ cab: "Custos Extras", dir: true, rel: "ambar", html: t => `<b>${formatarMoeda(t.extraCentavos || 0)}</b>`, txt: t => formatarMoeda(t.extraCentavos || 0) }] : []),
                 { cab: "Dias Atraso", dir: true, rel: "azul", html: t => String(t.dias), txt: t => String(t.dias) },
-                { cab: "Valor Total<br>(Valor + Juros)", cabTxt: "Valor Total (Valor + Juros)", dir: true, rel: "azul", html: t => `<b>${formatarMoeda(t.totalCentavos)}</b>`, txt: t => formatarMoeda(t.totalCentavos) }
+                { cab: temExtras ? "Valor Total<br>(Valor + Juros + Extras)" : "Valor Total<br>(Valor + Juros)", cabTxt: temExtras ? "Valor Total (Valor + Juros + Extras)" : "Valor Total (Valor + Juros)", dir: true, rel: "azul", html: t => `<b>${formatarMoeda(t.totalCentavos)}</b>`, txt: t => formatarMoeda(t.totalCentavos) }
             ];
         }
 
         return [
+            colCodigo,
             { cab: "Título", dir: false, html: t => escaparHTML(titulo(t)), txt: titulo },
             { cab: "Vencimento", dir: false, html: venc, txt: venc },
             { cab: "Dias Atraso", dir: true, html: t => String(t.dias), txt: t => String(t.dias) },
@@ -1725,7 +1919,7 @@ const Teams = {
             azul: "background-color:#DBEAFE;color:#1A365D;font-weight:bold;",
             ambar: "background-color:#FFF4D6;color:#9A5B00;font-weight:bold;"
         };
-        const colunas = this.colunasResumo(tipo);
+        const colunas = this.colunasResumo(tipo, p && grupo.subtotalExtras > 0);
 
         const cabecalho = colunas.map(c => `
                 <th nowrap="nowrap" valign="middle" style="${borda}white-space:nowrap;background-color:#1A365D;color:#FFFFFF;text-align:${c.dir ? "right" : "left"};">${c.cab}</th>`).join("");
@@ -1756,6 +1950,10 @@ const Teams = {
         </thead>
         <tbody>${linhas}</tbody>
     </table>
+    ${p && grupo.subtotalExtras > 0 ? `<p style="margin-top:8px;">
+        <b>CUSTOS EXTRAS (TOTAL):</b>
+        <span style="background-color:#FFF4D6;color:#9A5B00;font-size:14px;"><b>&nbsp;${formatarMoeda(grupo.subtotalExtras)}&nbsp;</b></span>
+    </p>` : ""}
     <p style="margin-top:8px;">
         <b>${rotuloTotal}:</b>
         <span style="${estiloTotal}"><b>&nbsp;${formatarMoeda(valorTotal)}&nbsp;</b></span>
@@ -1767,7 +1965,7 @@ const Teams = {
     montarTexto({ tipo, responsavel, dataHora, grupo }) {
         const encargo = Rotulos.encargo(tipo);
         const p = tipo === "Protesto";
-        const colunas = this.colunasResumo(tipo);
+        const colunas = this.colunasResumo(tipo, p && grupo.subtotalExtras > 0);
 
         const linhas = grupo.titulos.map(t => colunas.map(c => c.txt(t)).join("\t"));
 
@@ -1779,6 +1977,7 @@ const Teams = {
             colunas.map(c => c.cabTxt || c.cab).join("\t"),
             ...linhas,
             "",
+            ...(p && grupo.subtotalExtras > 0 ? [`CUSTOS EXTRAS (TOTAL): ${formatarMoeda(grupo.subtotalExtras)}`] : []),
             p
                 ? `TOTAL DE PROTESTO: ${formatarMoeda(grupo.subtotalAtualizado)}`
                 : `TOTAL DE ${encargo.toUpperCase()}: ${formatarMoeda(grupo.subtotalJuros)}`
@@ -2433,6 +2632,927 @@ const Tema = {
         botao.setAttribute("aria-pressed", String(tema === "dark"));
         botao.setAttribute("aria-label", rotulo);
         botao.title = rotulo;
+    }
+
+};
+
+
+/* =====================================================
+   CALCULADORA REVERSA — ÚLTIMO DIA PARA PAGAR O BOLETO
+
+   Prazo: 5 dias corridos a partir do vencimento. Se o 5º dia
+   não for dia útil bancário, a regra depende do banco:
+     antecipa  (Banco do Brasil): vale o dia útil ANTERIOR
+     aguarda   (Santander, Itaú): vale o PRÓXIMO dia útil
+   A tela parte do dia da cobrança e lista os vencimentos
+   cujo último dia para pagar é aquele dia.
+===================================================== */
+
+const DiasBancarios = {
+
+    FIXOS: ["01-01", "04-21", "05-01", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"],
+    _cache: {},
+    extras: { completos: new Set(), anuais: new Set() },
+
+    /* Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher). */
+    pascoa(ano) {
+        const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100;
+        const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+        const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+        const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+        const m = Math.floor((a + 11 * h + 22 * l) / 451);
+        const mes = Math.floor((h + l - 7 * m + 114) / 31);
+        const dia = ((h + l - 7 * m + 114) % 31) + 1;
+        return new Date(ano, mes - 1, dia);
+    },
+
+    /* Feriados nacionais + dias sem expediente bancário (Carnaval, Sexta Santa, Corpus Christi). */
+    feriadosDoAno(ano) {
+        if (!this._cache[ano]) {
+            const lista = new Set(this.FIXOS.map(f => `${ano}-${f}`));
+            const pascoa = this.pascoa(ano);
+
+            [-48, -47, -2, 60].forEach(delta => lista.add(dataParaInput(adicionarDias(pascoa, delta))));
+            this._cache[ano] = lista;
+        }
+
+        return this._cache[ano];
+    },
+
+    /* Aceita "25/01", "09/07/2026", separados por vírgula, ponto e vírgula ou espaço. */
+    lerExtras(texto) {
+        const completos = new Set();
+        const anuais = new Set();
+
+        String(texto || "").split(/[\s,;]+/).filter(Boolean).forEach(item => {
+            const m = item.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+            if (!m) return;
+
+            const dia = m[1].padStart(2, "0");
+            const mes = m[2].padStart(2, "0");
+
+            if (m[3]) completos.add(`${m[3]}-${mes}-${dia}`);
+            else anuais.add(`${mes}-${dia}`);
+        });
+
+        this.extras = { completos, anuais };
+    },
+
+    ehFeriado(data) {
+        const iso = dataParaInput(data);
+
+        return this.feriadosDoAno(data.getFullYear()).has(iso) ||
+            this.extras.completos.has(iso) ||
+            this.extras.anuais.has(iso.slice(5));
+    },
+
+    ehUtil(data) {
+        const dia = data.getDay();
+        return dia !== 0 && dia !== 6 && !this.ehFeriado(data);
+    },
+
+    proximoUtil(data) {
+        const d = new Date(data);
+        do { d.setDate(d.getDate() + 1); } while (!this.ehUtil(d));
+        return d;
+    },
+
+    utilAnterior(data) {
+        const d = new Date(data);
+        do { d.setDate(d.getDate() - 1); } while (!this.ehUtil(d));
+        return d;
+    }
+
+};
+
+
+const Reversa = {
+
+    BANCOS: [
+        { id: "bb", nome: "Banco do Brasil", regra: "antecipa" },
+        { id: "santander", nome: "Santander", regra: "aguarda" },
+        { id: "itau", nome: "Itaú", regra: "aguarda" }
+    ],
+
+    /* Último dia para pagar um boleto, sem ir a cartório. */
+    ultimoDia(vencimento, regra) {
+        const quinto = adicionarDias(vencimento, 5);
+
+        if (DiasBancarios.ehUtil(quinto)) return quinto;
+
+        return regra === "antecipa"
+            ? DiasBancarios.utilAnterior(quinto)
+            : DiasBancarios.proximoUtil(quinto);
+    },
+
+    /* Olha os 12 dias anteriores à data e separa os vencimentos
+       cujo último dia para pagar é exatamente a data informada. */
+    calcular(data, bancos) {
+        const iso = dataParaInput(data);
+        const linhas = [];
+
+        for (let i = 12; i >= 1; i--) {
+            const vencimento = adicionarDias(data, -i);
+
+            linhas.push({
+                vencimento,
+                quinto: adicionarDias(vencimento, 5),
+                ultimos: bancos.map(b => this.ultimoDia(vencimento, b.regra))
+            });
+        }
+
+        const acerta = (linha, i) => dataParaInput(linha.ultimos[i]) === iso;
+
+        return {
+            linhas,
+            porBanco: bancos.map((banco, i) => ({
+                banco,
+                vencimentos: linhas.filter(l => acerta(l, i)).map(l => l.vencimento)
+            })),
+            todos: linhas.filter(l => bancos.every((b, i) => acerta(l, i))).map(l => l.vencimento)
+        };
+    }
+
+};
+
+
+const ReversaUI = {
+
+    DIAS: ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"],
+
+    /* A tabela de memória começa fechada e lembra se o usuário a abriu. */
+    _memoriaAberta: false,
+
+    iniciar() {
+        get("rv-data").value = dataParaInput(new Date());
+
+        get("rv-resultado").addEventListener("toggle", evento => {
+            if (evento.target.classList && evento.target.classList.contains("rv-memoria")) {
+                this._memoriaAberta = evento.target.open;
+            }
+        }, true);
+
+        ["rv-data", "rv-outro", "rv-feriados"].forEach(id => {
+            get(id).addEventListener("input", () => this.renderizar());
+            get(id).addEventListener("change", () => this.renderizar());
+        });
+
+        this.renderizar();
+    },
+
+    bancosAtivos() {
+        const lista = Reversa.BANCOS.map(b => ({ ...b }));
+        const outro = get("rv-outro").value;
+
+        if (outro === "aguarda" || outro === "antecipa") {
+            lista.push({ id: "outro", nome: "Outro banco", regra: outro });
+        }
+
+        return lista;
+    },
+
+    /* "06/11 (sex)" · "02/11 (seg, feriado)" */
+    rotulo(data) {
+        const feriado = DiasBancarios.ehFeriado(data) ? ", feriado" : "";
+        return `${formatarData(data).slice(0, 5)} (${this.DIAS[data.getDay()]}${feriado})`;
+    },
+
+    regraTexto(regra) {
+        return regra === "antecipa"
+            ? "Se o 5º dia não for útil, vale o dia útil anterior"
+            : "Se o 5º dia não for útil, aguarda o próximo dia útil";
+    },
+
+    renderizar() {
+        const aviso = get("rv-aviso");
+        const saida = get("rv-resultado");
+        const valor = get("rv-data").value;
+
+        if (!valor) {
+            aviso.hidden = true;
+            saida.innerHTML = "";
+            return;
+        }
+
+        DiasBancarios.lerExtras(get("rv-feriados").value);
+
+        const data = criarData(valor);
+        const bancos = this.bancosAtivos();
+        const resultado = Reversa.calcular(data, bancos);
+        const iso = dataParaInput(data);
+
+        aviso.hidden = DiasBancarios.ehUtil(data);
+        aviso.textContent = `${this.rotulo(data)} não é dia útil bancário. Ninguém consegue pagar boleto nesse dia, então ele não é o último dia de nenhum vencimento.`;
+
+        const blocos = resultado.porBanco.map(({ banco, vencimentos }) => `
+            <div class="rv-banco${vencimentos.length ? "" : " sem"}">
+                <strong>${escaparHTML(banco.nome)}</strong>
+                <small>${escaparHTML(this.regraTexto(banco.regra))}</small>
+                <p>${vencimentos.length
+                    ? `Último dia para os boletos que venceram em: <b>${escaparHTML(vencimentos.map(v => this.rotulo(v)).join(", "))}</b>`
+                    : "Nenhum vencimento tem este dia como último dia."}</p>
+            </div>`).join("");
+
+        const todos = resultado.todos.length
+            ? `<div class="next"><strong>Último dia em todos os bancos:</strong> boletos que venceram em ${escaparHTML(resultado.todos.map(v => this.rotulo(v)).join(", "))}.</div>`
+            : "";
+
+        const cabecalho = bancos.map(b => `<th>${escaparHTML(b.nome)}</th>`).join("");
+
+        const linhas = resultado.linhas.map(l => `
+            <tr>
+                <td>${escaparHTML(this.rotulo(l.vencimento))}</td>
+                <td>${escaparHTML(this.rotulo(l.quinto))}</td>
+                ${l.ultimos.map(u => `<td${dataParaInput(u) === iso ? ' class="destaque-p"' : ""}>${escaparHTML(this.rotulo(u))}</td>`).join("")}
+            </tr>`).join("");
+
+        saida.innerHTML = `
+            <div class="rv-bancos">${blocos}</div>
+            ${todos}
+            <details class="rv-memoria"${this._memoriaAberta ? " open" : ""}>
+                <summary>
+                    <span>Ver memória de cálculo</span>
+                    <small>Vencimento e último dia para pagar, por banco</small>
+                </summary>
+                <div class="tabela-wrap">
+                    <table class="tabela compacta">
+                        <thead><tr><th>Vencimento</th><th>5º dia corrido</th>${cabecalho}</tr></thead>
+                        <tbody>${linhas}</tbody>
+                    </table>
+                </div>
+            </details>`;
+    }
+
+};
+
+
+/* =====================================================
+   LOGO DA MEDIHOSP (relatório de impressão e PDF)
+
+   Versão pequena embutida (PNG em base64): funciona em
+   qualquer janela e também com o arquivo aberto direto do
+   disco, onde o navegador não deixa converter imagens.
+===================================================== */
+
+const Logo = {
+
+    DATA_URL: "data:image/png;base64,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"
+
+};
+
+
+/* =====================================================
+   AVISO DO DIA — ÚLTIMO DIA PARA PAGAR (topo da Reversa)
+
+   Usa a data de hoje e Reversa.calcular() com os três bancos
+   fixos. Se hoje não for dia útil bancário, mostra o próximo
+   dia útil. Confere a data a cada 30 s (e ao voltar para a
+   aba), então vira o dia sem precisar recarregar a página.
+===================================================== */
+
+const AvisoHoje = {
+
+    _chave: "",
+    _iso: "",
+
+    iniciar() {
+        this.verificar();
+
+        setInterval(() => this.verificar(), 30000);
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden) this.verificar();
+        });
+
+        /* Feriados extras mudam o resultado. */
+        get("rv-feriados").addEventListener("input", () => this.verificar());
+        get("rv-feriados").addEventListener("change", () => this.verificar());
+    },
+
+    /* Só redesenha se a data (ou os feriados extras) mudou. */
+    verificar() {
+        const hoje = new Date();
+        const iso = dataParaInput(hoje);
+        const chave = `${iso}|${get("rv-feriados").value}`;
+
+        if (chave === this._chave) return;
+
+        const virouODia = this._iso && iso !== this._iso;
+
+        /* Virou o dia: se o "Dia da cobrança" ainda estava com o dia anterior
+           (ninguém mexeu), acompanha o novo dia. */
+        if (virouODia && get("rv-data").value === this._iso) {
+            get("rv-data").value = iso;
+            ReversaUI.renderizar();
+        }
+
+        this._chave = chave;
+        this._iso = iso;
+        this.renderizar(hoje);
+
+        if (virouODia) ReversaLote.atualizarSeCalculado();
+    },
+
+    /* "sexta-feira 06/11" */
+    rotuloDia(data) {
+        const semana = data.toLocaleDateString("pt-BR", { weekday: "long" });
+        return `${semana} ${formatarData(data).slice(0, 5)}`;
+    },
+
+    renderizar(hoje) {
+        const caixa = get("rv-hoje");
+
+        DiasBancarios.lerExtras(get("rv-feriados").value);
+
+        const hojeUtil = DiasBancarios.ehUtil(hoje);
+        const alvo = hojeUtil ? hoje : DiasBancarios.proximoUtil(hoje);
+        const resultado = Reversa.calcular(alvo, Reversa.BANCOS);
+        const todosIso = new Set(resultado.todos.map(v => dataParaInput(v)));
+
+        let titulo;
+        let explicacao = "";
+
+        if (hojeUtil) {
+            titulo = `Hoje, ${this.rotuloDia(hoje)}, é o último dia para pagar`;
+        } else {
+            const motivo = DiasBancarios.ehFeriado(hoje) ? "é feriado" : "é fim de semana";
+            titulo = `Hoje, ${this.rotuloDia(hoje)}, não é dia útil bancário`;
+            explicacao = `Hoje ${motivo}. O próximo dia útil é ${this.rotuloDia(alvo)}, e nele é o último dia para pagar:`;
+        }
+
+        const cards = resultado.porBanco.map(({ banco, vencimentos }) => {
+            const chips = vencimentos.map(v =>
+                `<span class="ad-chip${todosIso.has(dataParaInput(v)) ? " todos" : ""}">${escaparHTML(ReversaUI.rotulo(v))}</span>`
+            ).join("");
+
+            return `
+                <div class="ad-banco${vencimentos.length ? "" : " sem"}">
+                    <strong>${escaparHTML(banco.nome)}</strong>
+                    ${vencimentos.length
+                        ? `<small>Boletos que venceram em:</small><div class="ad-chips">${chips}</div>`
+                        : `<small>Nenhum vencimento tem este dia como último dia.</small>`}
+                </div>`;
+        }).join("");
+
+        const quando = hojeUtil ? "hoje" : `em ${formatarData(alvo).slice(0, 5)}`;
+
+        const destaque = resultado.todos.length
+            ? `<div class="ad-alerta" role="alert">
+                    <strong>Último dia em todos os bancos</strong>
+                    <span>Boletos que venceram em ${escaparHTML(resultado.todos.map(v => ReversaUI.rotulo(v)).join(", "))}: ${quando} é o último dia no Banco do Brasil, no Santander e no Itaú.</span>
+               </div>`
+            : "";
+
+        caixa.innerHTML = `
+            <div class="ad-topo">
+                <h2>${escaparHTML(titulo)}</h2>
+                ${explicacao ? `<p>${escaparHTML(explicacao)}</p>` : ""}
+            </div>
+            ${destaque}
+            <div class="ad-bancos">${cards}</div>`;
+    }
+
+};
+
+
+/* =====================================================
+   CONFERÊNCIA EM LOTE (Calculadora Reversa)
+
+   Uma linha por boleto: cliente; vencimento; banco
+   (ou colado do Excel, separado por TAB).
+   Usa Reversa.ultimoDia() e DiasBancarios (regras e
+   feriados já existentes) e conta sempre em dias corridos.
+   Nada é salvo: o resultado vive só nesta página.
+===================================================== */
+
+const ReversaLote = {
+
+    /* Última conferência feita: { referencia, linhas } */
+    resultado: null,
+
+    /* Linhas com a linha do tempo aberta (guardadas pelo número da linha). */
+    _abertas: new Set(),
+    _atraso: null,
+
+    iniciar() {
+        get("lt-calcular").addEventListener("click", () => this.calcular());
+        get("lt-colar").addEventListener("click", () => this.colar());
+        get("lt-excel").addEventListener("click", () => this.exportarExcel());
+        get("lt-teams").addEventListener("click", () => this.copiarTeams());
+
+        /* Cálculo ao vivo: recalcula meio segundo depois da última tecla ou colagem. */
+        get("lt-entrada").addEventListener("input", () => {
+            clearTimeout(this._atraso);
+            this._atraso = setTimeout(() => this.calcular(true), 500);
+        });
+
+        /* Mudou o dia da cobrança, o outro banco ou os feriados: refaz o que já está na tela. */
+        ["rv-data", "rv-outro", "rv-feriados"].forEach(id => {
+            ["input", "change"].forEach(evento =>
+                get(id).addEventListener(evento, () => this.atualizarSeCalculado())
+            );
+        });
+
+        const corpo = get("lt-corpo");
+        corpo.addEventListener("click", evento => this.alternarLinha(evento.target.closest("tr.lt-linha")));
+        corpo.addEventListener("keydown", evento => {
+            if (evento.key !== "Enter" && evento.key !== " ") return;
+            const linha = evento.target.closest("tr.lt-linha");
+            if (!linha) return;
+            evento.preventDefault();
+            this.alternarLinha(linha);
+        });
+    },
+
+    alternarLinha(linha) {
+        if (!linha) return;
+
+        const n = Number(linha.dataset.n);
+        if (this._abertas.has(n)) this._abertas.delete(n);
+        else this._abertas.add(n);
+
+        this.renderizar();
+
+        const mesma = get("lt-corpo").querySelector(`tr.lt-linha[data-n="${n}"]`);
+        if (mesma) mesma.focus();
+    },
+
+    /* ---------- leitura das linhas ---------- */
+
+    semAcento(texto) {
+        return String(texto).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    },
+
+    /* "BB", "banco do brasil", "Itaú", "itau unibanco"... → banco da Reversa, ou null. */
+    lerBanco(texto) {
+        const t = this.semAcento(texto).toLowerCase().replace(/[^a-z]/g, "");
+
+        if (t === "bb" || t === "bancodobrasil") return Reversa.BANCOS[0];
+        if (t === "santander") return Reversa.BANCOS[1];
+        if (t.startsWith("itau")) return Reversa.BANCOS[2];
+
+        return null;
+    },
+
+    /* dd/mm/aaaa (aceita 1 dígito em dia/mês e - ou . no lugar da barra). Data inexistente → null. */
+    lerData(texto) {
+        const m = String(texto).trim().match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+        if (!m) return null;
+
+        const dia = Number(m[1]), mes = Number(m[2]), ano = Number(m[3]);
+        const data = new Date(ano, mes - 1, dia);
+
+        const confere = data.getFullYear() === ano && data.getMonth() === mes - 1 && data.getDate() === dia;
+        return confere ? data : null;
+    },
+
+    campos(linha) {
+        const partes = linha.includes("\t") ? linha.split("\t") : linha.split(";");
+        return partes.map(p => p.trim().replace(/^"(.*)"$/, "$1").trim());
+    },
+
+    /* Cabeçalho colado do Excel (Cliente / Vencimento / Banco) é ignorado. */
+    ehCabecalho(partes) {
+        const t = this.semAcento(partes.join(" ")).toLowerCase();
+        return /venc/.test(t) && /banco/.test(t) && !this.lerData(partes[1] || "");
+    },
+
+    /* Lê o texto e devolve uma linha por boleto, cada uma válida ou com o motivo do erro. */
+    interpretar(texto, hoje) {
+        const saida = [];
+
+        String(texto).split(/\r?\n/).forEach((bruta, i) => {
+            if (!bruta.trim()) return;
+
+            const partes = this.campos(bruta);
+            if (i === 0 && this.ehCabecalho(partes)) return;
+
+            const base = {
+                n: i + 1,
+                cliente: partes[0] || "(sem nome)",
+                vencimentoTxt: partes[1] || "",
+                bancoTxt: partes[2] || ""
+            };
+
+            if (partes.length < 3) {
+                saida.push({ ...base, erro: "Formato inválido: use cliente; vencimento; banco" });
+                return;
+            }
+
+            const vencimento = this.lerData(partes[1]);
+            const banco = this.lerBanco(partes[2]);
+
+            if (!vencimento) {
+                saida.push({ ...base, erro: "Data de vencimento inválida (use dd/mm/aaaa)" });
+                return;
+            }
+
+            if (!banco) {
+                saida.push({ ...base, erro: "Banco não reconhecido (use BB, Santander ou Itaú)" });
+                return;
+            }
+
+            const ultimo = Reversa.ultimoDia(vencimento, banco.regra);
+            const dias = diferencaDias(hoje, ultimo);
+
+            saida.push({
+                ...base,
+                vencimento,
+                banco,
+                ultimo,
+                quinto: adicionarDias(vencimento, 5),
+                cartorio: DiasBancarios.proximoUtil(ultimo),
+                dias,
+                situacao: dias < 0 ? "vencido" : dias === 0 ? "hoje" : "falta",
+                texto: dias < 0 ? "Prazo vencido" : dias === 0 ? "Último dia: hoje" : `Falta ${dias} dia(s)`
+            });
+        });
+
+        /* Mais urgente primeiro (prazo vencido, hoje, depois os que faltam). Inválidas no fim. */
+        const validas = saida.filter(l => !l.erro).sort((a, b) =>
+            a.dias - b.dias || a.cliente.localeCompare(b.cliente, "pt-BR"));
+
+        return [...validas, ...saida.filter(l => l.erro)];
+    },
+
+    /* ---------- tela ---------- */
+
+    mensagem(texto, tipo = "erro") {
+        const caixa = get("lt-msg");
+        caixa.hidden = !texto;
+        caixa.textContent = texto || "";
+        caixa.className = `form-msg ${tipo}`;
+    },
+
+    /* O dia de referência é o campo "Dia da cobrança" (que já vem com a data de hoje). */
+    referencia() {
+        const valor = get("rv-data").value;
+        return valor ? criarData(valor) : new Date();
+    },
+
+    calcular(aoVivo = false) {
+        const texto = get("lt-entrada").value;
+
+        if (!texto.trim()) {
+            this.resultado = null;
+            get("lt-saida").hidden = true;
+            this.mensagem(aoVivo ? "" : "Cole ao menos uma linha: cliente; vencimento; banco.");
+            return;
+        }
+
+        DiasBancarios.lerExtras(get("rv-feriados").value);
+
+        const referencia = this.referencia();
+        const linhas = this.interpretar(texto, referencia);
+
+        if (linhas.length === 0) {
+            this.resultado = null;
+            get("lt-saida").hidden = true;
+            this.mensagem(aoVivo ? "" : "Nenhuma linha encontrada para calcular.");
+            return;
+        }
+
+        this.resultado = { referencia, linhas };
+        this.renderizar();
+    },
+
+    /* Chamado quando a data vira: refaz a conta com o novo "hoje". */
+    atualizarSeCalculado() {
+        if (this.resultado) this.calcular(true);
+    },
+
+    /* ---------- linha do tempo do boleto ---------- */
+
+    /* Vencimento → 5º dia → último dia → cartório, com um marcador no dia de referência.
+       "detalhada" acrescenta os rótulos com as datas. */
+    linhaDoTempo(l, referencia, detalhada) {
+        const total = Math.max(1, diferencaDias(l.vencimento, l.cartorio));
+        const pos = data => Math.min(100, Math.max(0, diferencaDias(l.vencimento, data) / total * 100));
+        const pct = n => `${n.toFixed(2)}%`;
+
+        const pontos = [
+            { cls: "venc", nome: "Vencimento", data: l.vencimento },
+            { cls: "quinto", nome: "5º dia", data: l.quinto },
+            { cls: "ultimo", nome: "Último dia", data: l.ultimo },
+            { cls: "cart", nome: "Cartório", data: l.cartorio }
+        ];
+
+        /* Se o 5º dia é o último dia, mostra um ponto só (o "Último dia"). */
+        const visiveis = pontos.filter(p => !(p.cls === "quinto" && dataParaInput(l.quinto) === dataParaInput(l.ultimo)));
+
+        const antes = diferencaDias(l.vencimento, referencia);
+        const fora = antes < 0 ? "antes" : antes > total ? "depois" : "";
+        const hojeTxt = dataParaInput(referencia) === dataParaInput(new Date()) ? "Hoje" : "Dia da cobrança";
+
+        const ate = pos(l.ultimo);
+
+        const marcas = visiveis.map(p =>
+            `<span class="tl-ponto ${p.cls}" style="left:${pct(pos(p.data))}" title="${escaparHTML(`${p.nome}: ${ReversaUI.rotulo(p.data)}`)}"></span>`
+        ).join("");
+
+        const rotulos = detalhada ? visiveis.map((p, i) => {
+            const x = pos(p.data);
+            const lado = x < 9 ? " esq" : x > 91 ? " dir" : "";
+            return `<span class="tl-rot ${i % 2 ? "cima" : "baixo"}${lado}" style="left:${pct(x)}"><b>${p.nome}</b>${escaparHTML(ReversaUI.rotulo(p.data))}</span>`;
+        }).join("") : "";
+
+        const hoje = `<span class="tl-hoje${fora ? " " + fora : ""}" style="left:${pct(pos(referencia))}" title="${escaparHTML(`${hojeTxt}: ${ReversaUI.rotulo(referencia)}${fora === "antes" ? " (antes do vencimento)" : fora === "depois" ? " (depois da data do cartório)" : ""}`)}">${detalhada ? `<i>${hojeTxt.toLowerCase()}</i>` : ""}</span>`;
+
+        const resumo = `Vencimento ${ReversaUI.rotulo(l.vencimento)}, último dia ${ReversaUI.rotulo(l.ultimo)}, cartório ${ReversaUI.rotulo(l.cartorio)}`;
+
+        return `
+            <div class="tl${detalhada ? " tl-grande" : ""}" role="img" aria-label="${escaparHTML(resumo)}">
+                <div class="tl-trilho">
+                    <span class="tl-seg ok" style="left:0;width:${pct(ate)}"></span>
+                    <span class="tl-seg cart" style="left:${pct(ate)};width:${pct(100 - ate)}"></span>
+                </div>
+                ${marcas}${hoje}${rotulos}
+            </div>`;
+    },
+
+    renderizar() {
+        const { referencia, linhas } = this.resultado;
+        const validas = linhas.filter(l => !l.erro);
+        const invalidas = linhas.length - validas.length;
+        const conta = tipo => validas.filter(l => l.situacao === tipo).length;
+        const refTexto = formatarData(referencia);
+        const ehHoje = dataParaInput(referencia) === dataParaInput(new Date());
+
+        /* Linhas que sumiram (texto editado) deixam de contar como abertas. */
+        const existentes = new Set(validas.map(l => l.n));
+        this._abertas.forEach(n => { if (!existentes.has(n)) this._abertas.delete(n); });
+
+        const corpo = linhas.map(l => {
+            if (l.erro) {
+                return `
+                    <tr class="lt-invalida">
+                        <td>${escaparHTML(l.cliente)}</td>
+                        <td>${escaparHTML(l.vencimentoTxt || "—")}</td>
+                        <td>${escaparHTML(l.bancoTxt || "—")}</td>
+                        <td>—</td>
+                        <td><span class="lt-st inv">Linha ${l.n}: ${escaparHTML(l.erro)}</span></td>
+                        <td>—</td>
+                    </tr>`;
+            }
+
+            const aberta = this._abertas.has(l.n);
+
+            return `
+                <tr class="lt-linha${aberta ? " aberta" : ""}" data-n="${l.n}" tabindex="0"
+                    aria-expanded="${aberta}" title="Clique para ver a linha do tempo completa">
+                    <td>${escaparHTML(l.cliente)}</td>
+                    <td>${escaparHTML(ReversaUI.rotulo(l.vencimento))}</td>
+                    <td>${escaparHTML(l.banco.nome)}</td>
+                    <td>${escaparHTML(ReversaUI.rotulo(l.ultimo))}</td>
+                    <td><span class="lt-st ${l.situacao}">${escaparHTML(l.texto)}</span></td>
+                    <td class="lt-prazo">${this.linhaDoTempo(l, referencia, false)}</td>
+                </tr>${aberta ? `
+                <tr class="lt-detalhe"><td colspan="6">${this.linhaDoTempo(l, referencia, true)}</td></tr>` : ""}`;
+        }).join("");
+
+        get("lt-legenda").innerHTML = validas.length ? `
+            <span><i class="venc"></i>Vencimento</span>
+            <span><i class="quinto"></i>5º dia</span>
+            <span><i class="ultimo"></i>Último dia</span>
+            <span><i class="cart"></i>Cartório (estimado)</span>
+            <span><i class="hoje"></i>${ehHoje ? "Hoje" : "Dia da cobrança"}</span>
+            <em>Clique numa linha para ampliar.</em>` : "";
+
+        get("lt-totais").innerHTML = `
+            <div><small>BOLETOS</small><strong>${validas.length}</strong></div>
+            <div class="lt-t-venc"><small>PRAZO VENCIDO</small><strong>${conta("vencido")}</strong></div>
+            <div class="lt-t-hoje"><small>ÚLTIMO DIA: HOJE</small><strong>${conta("hoje")}</strong></div>
+            <div class="lt-t-falta"><small>NO PRAZO</small><strong>${conta("falta")}</strong></div>
+            ${invalidas ? `<div class="lt-t-inv"><small>LINHAS INVÁLIDAS</small><strong>${invalidas}</strong></div>` : ""}`;
+
+        get("lt-corpo").innerHTML = corpo;
+        get("lt-saida").hidden = false;
+
+        this.mensagem(
+            ehHoje
+                ? `Conferência feita para hoje, ${refTexto}, em dias corridos.`
+                : `Conferência feita para o dia ${refTexto} (campo "Dia da cobrança"), em dias corridos.`,
+            invalidas ? "aviso" : "ok"
+        );
+    },
+
+    /* ---------- colar da área de transferência ---------- */
+
+    async colar() {
+        try {
+            const texto = await navigator.clipboard.readText();
+
+            if (!texto.trim()) {
+                this.mensagem("A área de transferência está vazia.", "aviso");
+                return;
+            }
+
+            get("lt-entrada").value = texto;
+            this.calcular();
+        } catch (erro) {
+            this.mensagem("O navegador não permitiu ler a área de transferência. Clique na caixa acima e use Ctrl+V.", "aviso");
+        }
+    },
+
+    /* ---------- exportações ---------- */
+
+    nomeArquivo(extensao) {
+        return `conferencia-lote-${dataParaInput(this.resultado.referencia)}.${extensao}`;
+    },
+
+    async exportarExcel() {
+        if (!this.resultado) return;
+
+        this.mensagem("Gerando Excel...", "ok");
+
+        let ExcelJS;
+
+        try {
+            ExcelJS = await Bibliotecas.excel();
+        } catch (erro) {
+            console.error(erro);
+
+            /* Plano B: sem a biblioteca, baixa um CSV que o Excel abre normalmente. */
+            baixarArquivo(new Blob([this.montarCSV()], { type: "text/csv;charset=utf-8" }), this.nomeArquivo("csv"));
+
+            this.mensagem("Não foi possível carregar o gerador de Excel. Baixei um arquivo CSV, que abre no Excel.", "aviso");
+            return;
+        }
+
+        try {
+            const planilha = this.montarExcel(ExcelJS);
+            const buffer = await planilha.xlsx.writeBuffer();
+
+            baixarArquivo(
+                new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+                this.nomeArquivo("xlsx")
+            );
+
+            this.mensagem("Planilha Excel gerada.", "ok");
+        } catch (erro) {
+            console.error(erro);
+            this.mensagem("Erro ao gerar o Excel.");
+        }
+    },
+
+    /* Datas gravadas como datas reais do Excel. */
+    montarExcel(ExcelJS) {
+        const { referencia, linhas } = this.resultado;
+        const dataUTC = d => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        const preenchimento = argb => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
+        const cores = {
+            vencido: { fundo: "FFFDECEA", texto: "FFB42318" },
+            hoje: { fundo: "FFFFF4D6", texto: "FF9A5B00" },
+            falta: { fundo: "FFE6F4EC", texto: "FF1E7B4B" },
+            inv: { fundo: "FFF3F4F6", texto: "FFB42318" }
+        };
+
+        const wb = new ExcelJS.Workbook();
+        wb.creator = get("responsavel").value.trim() || "Calculadora de Títulos";
+        wb.created = new Date();
+
+        const ws = wb.addWorksheet("Conferência em lote", { views: [{ showGridLines: false }] });
+        ws.columns = [{ width: 34 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 44 }];
+
+        const titulo = ws.addRow(["Conferência em lote - Último dia para pagar"]);
+        titulo.getCell(1).font = { bold: true, size: 15, color: { argb: "FF1A365D" } };
+
+        [
+            ["Dia de referência:", dataUTC(referencia)],
+            ["Emitido em:", new Date().toLocaleString("pt-BR")],
+            ["Contagem:", "Dias corridos"]
+        ].forEach(([rotulo, valor], i) => {
+            const linha = ws.addRow([rotulo, valor]);
+            linha.getCell(1).font = { bold: true };
+            linha.getCell(2).alignment = { horizontal: "left" };
+            if (i === 0) linha.getCell(2).numFmt = "dd/mm/yyyy";
+        });
+
+        ws.addRow([]);
+
+        const cab = ws.addRow(["Cliente", "Vencimento", "Banco", "Último dia", "Situação"]);
+        cab.eachCell(c => {
+            c.font = { bold: true, color: { argb: "FFFFFFFF" } };
+            c.fill = preenchimento("FF1A365D");
+        });
+
+        linhas.forEach(l => {
+            const linha = l.erro
+                ? ws.addRow([l.cliente, l.vencimentoTxt || "—", l.bancoTxt || "—", "—", `Linha ${l.n}: ${l.erro}`])
+                : ws.addRow([l.cliente, dataUTC(l.vencimento), l.banco.nome, dataUTC(l.ultimo), l.texto]);
+
+            const cor = cores[l.erro ? "inv" : l.situacao];
+            const borda = { bottom: { style: "thin", color: { argb: "FFE5E7EB" } } };
+
+            for (let i = 1; i <= 5; i++) {
+                const celula = linha.getCell(i);
+                celula.border = borda;
+                celula.alignment = { horizontal: "left" };
+                if (!l.erro && (i === 2 || i === 4)) celula.numFmt = "dd/mm/yyyy";
+            }
+
+            linha.getCell(5).font = { bold: true, color: { argb: cor.texto } };
+            linha.getCell(5).fill = preenchimento(cor.fundo);
+        });
+
+        return wb;
+    },
+
+    /* Plano B: CSV com ponto e vírgula e BOM (acentos corretos no Excel brasileiro). */
+    montarCSV() {
+        const { referencia, linhas } = this.resultado;
+        const campo = valor => `"${String(valor).replace(/"/g, '""')}"`;
+
+        const todas = [
+            ["Conferência em lote - Último dia para pagar"],
+            ["Dia de referência", formatarData(referencia)],
+            ["Contagem", "Dias corridos"],
+            [],
+            ["Cliente", "Vencimento", "Banco", "Último dia", "Situação"],
+            ...linhas.map(l => l.erro
+                ? [l.cliente, l.vencimentoTxt, l.bancoTxt, "", `Linha ${l.n}: ${l.erro}`]
+                : [l.cliente, formatarData(l.vencimento), l.banco.nome, formatarData(l.ultimo), l.texto])
+        ];
+
+        return "\uFEFF" + todas.map(l => l.map(campo).join(";")).join("\r\n");
+    },
+
+    /* ---------- copiar para o Teams (mesmo padrão do resumo de custas) ---------- */
+
+    montarHTMLTeams(dataHora, responsavel) {
+        const { referencia, linhas } = this.resultado;
+        const borda = "border:1px solid #ADB5BD;padding:6px 10px;";
+        const estilos = {
+            vencido: "background-color:#FDECEA;color:#B42318;font-weight:bold;",
+            hoje: "background-color:#FFF4D6;color:#9A5B00;font-weight:bold;",
+            falta: "background-color:#E6F4EC;color:#1E7B4B;font-weight:bold;",
+            inv: "background-color:#F3F4F6;color:#B42318;font-weight:bold;"
+        };
+
+        const cabecalho = ["Cliente", "Vencimento", "Banco", "Último dia", "Situação"].map(c =>
+            `<th nowrap="nowrap" valign="middle" style="${borda}white-space:nowrap;background-color:#1A365D;color:#FFFFFF;text-align:left;">${c}</th>`
+        ).join("");
+
+        const corpo = linhas.map(l => {
+            const celulas = l.erro
+                ? [l.cliente, l.vencimentoTxt || "—", l.bancoTxt || "—", "—"]
+                : [l.cliente, formatarData(l.vencimento), l.banco.nome, formatarData(l.ultimo)];
+
+            const situacao = l.erro ? `Linha ${l.n}: ${l.erro}` : l.texto;
+
+            return `
+            <tr>${celulas.map((c, i) => `
+                <td valign="middle" style="${borda}${i > 0 ? "white-space:nowrap;" : ""}">${escaparHTML(i > 0 ? Teams.semQuebra(c) : c)}</td>`).join("")}
+                <td valign="middle" style="${borda}white-space:nowrap;${estilos[l.erro ? "inv" : l.situacao]}">${escaparHTML(situacao)}</td>
+            </tr>`;
+        }).join("");
+
+        return `
+<div>
+    <p>
+        <b>🕒 Data e Hora:</b> ${escaparHTML(dataHora)}<br>
+        ${responsavel ? `<b>👤 Responsável:</b> ${escaparHTML(responsavel)}<br>` : ""}
+        <b>📅 Dia de referência:</b> ${escaparHTML(formatarData(referencia))} (dias corridos)
+    </p>
+    <table style="border-collapse:collapse;" border="1" cellpadding="6" cellspacing="0">
+        <thead>
+            <tr style="background-color:#1A365D;color:#FFFFFF;">${cabecalho}
+            </tr>
+        </thead>
+        <tbody>${corpo}</tbody>
+    </table>
+</div>`;
+    },
+
+    montarTextoTeams(dataHora, responsavel) {
+        const { referencia, linhas } = this.resultado;
+
+        return textoSimples([
+            `🕒 Data e Hora: ${dataHora}`,
+            ...(responsavel ? [`👤 Responsável: ${responsavel}`] : []),
+            `📅 Dia de referência: ${formatarData(referencia)} (dias corridos)`,
+            "",
+            ["Cliente", "Vencimento", "Banco", "Último dia", "Situação"].join("\t"),
+            ...linhas.map(l => l.erro
+                ? [l.cliente, l.vencimentoTxt || "—", l.bancoTxt || "—", "—", `Linha ${l.n}: ${l.erro}`].join("\t")
+                : [l.cliente, formatarData(l.vencimento), l.banco.nome, formatarData(l.ultimo), l.texto].join("\t"))
+        ].join("\n"));
+    },
+
+    async copiarTeams() {
+        if (!this.resultado) return;
+
+        const dataHora = new Date().toLocaleString("pt-BR");
+        const responsavel = get("responsavel").value.trim();
+
+        try {
+            await Teams.escrever(
+                this.montarHTMLTeams(dataHora, responsavel),
+                this.montarTextoTeams(dataHora, responsavel)
+            );
+            Toast.mostrar("Copiado para o Teams com sucesso!", "ok");
+        } catch (erro) {
+            Toast.mostrar("Não foi possível copiar. Verifique as permissões do navegador.", "erro");
+        }
     }
 
 };

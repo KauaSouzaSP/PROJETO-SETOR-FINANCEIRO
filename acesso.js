@@ -8,9 +8,8 @@ const original = Navegacao.mostrar.bind(Navegacao);
 Navegacao.mostrar = (nome, atualizarHash) => original(!logado && RESTRITAS.includes(nome) ? 'acesso' : nome, atualizarHash);
 
 function estado() {
-    RESTRITAS.forEach(v => { document.querySelector(`.nav-btn[data-view="${v}"]`).hidden = !logado; });
+    $('nav-restrito').hidden = !logado;
     $('nav-acesso').hidden = logado;
-    $('ac-sair').hidden = !logado;
 }
 
 $('form-acesso').addEventListener('submit', e => {

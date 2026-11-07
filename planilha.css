@@ -17,6 +17,5 @@
 .pl-msg pre{white-space:pre-wrap;font:inherit;color:var(--text);margin-bottom:10px}
 .pl-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 @media(max-width:700px){.pl-bar{grid-template-columns:1fr}}
-.nav-btn[hidden],#ac-sair[hidden]{display:none!important}
-#ac-sair{margin-left:8px}
+.nav-btn[hidden],.nav-grupo[hidden]{display:none!important}
 #view-acesso .card{max-width:520px;margin-left:auto;margin-right:auto}

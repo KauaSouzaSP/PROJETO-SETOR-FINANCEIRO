@@ -161,7 +161,7 @@ $('pl-lista').addEventListener('click', e => {
     $(p + '-venc').value = vs.length ? new Date(Math.min(...vs)).toISOString().slice(0, 10) : '';
     $(p + '-valor').value = g.reduce((s, i) => s + i.val, 0).toFixed(2).replace('.', ',');
     p === 'wa' ? waGerar() : emRefresh(true);
-    document.querySelector(`.nav-btn[data-view="${p === 'wa' ? 'whatsapp' : 'email'}"]`).click();
+    document.querySelector(`#menu [data-view="${p === 'wa' ? 'whatsapp' : 'email'}"]`).click();
 });
 
 /* ---------- mensagens ---------- */

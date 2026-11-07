@@ -134,7 +134,7 @@ nav { flex: 1; display: flex; justify-content: center; gap: 2px; }
 main { width: min(960px, calc(100% - 30px)); margin: 0 auto; }
 
 .view { display: none; }
-.view.active { display: block; animation: aparecer 0.2s ease; }
+.view.active { display: block; animation: aparecer 0.15s ease; }
 
 @keyframes aparecer {
     from { opacity: 0; transform: translateY(4px); }
@@ -1290,3 +1290,374 @@ body, .card, .cnpj-box, .cnpj-kpis div, .cnpj-contatos, .field input, .field sel
 .tabela .dias-atraso.destaque-p { color: var(--red); }
 .totais.protesto .total { border-color: var(--blue-border); border-left: 4px solid var(--blue); background: var(--blue-soft); }
 .totais.protesto .total strong { color: var(--heading); }
+
+
+/* =========================================================
+   CUSTOS EXTRAS (Protesto) — a lista ganha uma 6ª caixa de total
+========================================================= */
+
+.totais.protesto { grid-template-columns: repeat(6, 1fr); }
+
+@media (max-width: 800px) {
+    .totais.protesto { grid-template-columns: repeat(2, 1fr); }
+}
+
+
+/* =========================================================
+   CALCULADORA REVERSA
+========================================================= */
+
+.rv-bancos { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-top: 22px; }
+
+.rv-banco {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--navy);
+    border-radius: var(--radius);
+    background: var(--surface-alt);
+}
+
+.rv-banco strong { display: block; color: var(--heading); font-size: 14px; font-weight: 600; }
+.rv-banco small { display: block; margin: 2px 0 10px; color: var(--muted); font-size: 11px; }
+.rv-banco p { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.rv-banco p b { color: var(--heading); }
+.rv-banco.sem p { color: var(--muted); }
+
+#rv-resultado .next { margin-top: 14px; }
+.rv-subtitulo { margin: 22px 0 8px; color: var(--heading); font-size: 14px; font-weight: 700; }
+
+
+/* =========================================================
+   AVISO DO DIA (topo da Calculadora Reversa)
+========================================================= */
+
+.aviso-dia { border-left: 4px solid var(--blue); }
+
+.ad-topo h2 { color: var(--heading); font-size: 17px; font-weight: 600; }
+.ad-topo p { margin-top: 4px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+
+.ad-alerta {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--red);
+    border-left: 4px solid var(--red);
+    border-radius: var(--radius);
+    background: var(--red-soft);
+    color: var(--red);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.ad-alerta strong { display: block; margin-bottom: 2px; font-size: 14px; }
+
+.ad-bancos { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px; }
+
+.ad-banco {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--navy);
+    border-radius: var(--radius);
+    background: var(--surface-alt);
+}
+
+.ad-banco strong { display: block; color: var(--heading); font-size: 14px; font-weight: 600; }
+.ad-banco small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.ad-banco.sem { border-top-color: var(--border-strong); }
+.ad-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+.ad-chip {
+    padding: 4px 9px;
+    border: 1px solid var(--blue-border);
+    border-radius: 999px;
+    background: var(--blue-soft);
+    color: var(--heading);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.ad-chip.todos { border-color: var(--red); background: var(--red-soft); color: var(--red); }
+
+
+/* =========================================================
+   CONFERÊNCIA EM LOTE (Calculadora Reversa)
+========================================================= */
+
+#lt-entrada {
+    min-height: 150px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#lt-entrada::placeholder { color: var(--placeholder); }
+#lt-entrada:hover { border-color: var(--input-hover); }
+#lt-entrada:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0, 86, 179, 0.15); }
+
+.lt-botoes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.lt-botoes .primary, .lt-botoes .secondary { height: 44px; margin-top: 0; }
+.lt-botoes .secondary:hover { color: var(--link); border-color: var(--blue); background: var(--blue-soft); }
+.lt-export { margin-top: 16px; }
+
+#lt-saida { margin-top: 18px; }
+.totais.lt-totais { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.lt-t-venc { border-left: 4px solid var(--red) !important; }
+.lt-t-venc strong { color: var(--red) !important; }
+.lt-t-hoje { border-left: 4px solid #D99000 !important; }
+.lt-t-hoje strong { color: var(--amber) !important; }
+.lt-t-falta { border-left: 4px solid var(--green) !important; }
+.lt-t-falta strong { color: var(--green) !important; }
+.lt-t-inv { border-left: 4px solid var(--border-strong) !important; }
+
+table.tabela.lote-tab { min-width: 640px; }
+.lote-tab td:first-child { white-space: normal; min-width: 160px; }
+
+.lt-st {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.lt-st.vencido { color: var(--red); background: var(--red-soft); }
+.lt-st.hoje    { color: var(--amber); background: var(--amber-soft); }
+.lt-st.falta   { color: var(--green); background: var(--green-soft); }
+.lt-st.inv     { color: var(--red); background: var(--surface-alt); border: 1px solid var(--red); border-radius: var(--radius); white-space: normal; }
+
+@media (max-width: 650px) {
+    .lt-botoes { grid-template-columns: 1fr; }
+}
+
+
+/* =========================================================
+   CABEÇALHO COM O LOGO (telas largas)
+   O logo ocupa espaço extra: o conteúdo do cabeçalho fica um pouco
+   mais largo e o menu passa a rolar por dentro, em vez de empurrar
+   o relógio e o botão de tema para fora da tela.
+========================================================= */
+
+@media (min-width: 801px) {
+    header { padding-left: max(16px, calc((100% - 1280px) / 2)); padding-right: max(16px, calc((100% - 1280px) / 2)); }
+    nav { min-width: 0; overflow-x: auto; justify-content: center; justify-content: safe center; scrollbar-width: none; }
+    nav::-webkit-scrollbar { display: none; }
+    .brand { min-width: 150px; }
+}
+
+
+/* =========================================================
+   MENU ENXUTO — grupo "Restrito" com submenu
+========================================================= */
+
+.ico-nav { width: 14px; height: 14px; margin: -2px 5px 0 0; vertical-align: middle; }
+.ico-nav.ico-seta { width: 12px; height: 12px; margin: -1px 0 0 4px; transition: transform 0.15s; }
+.nav-btn[aria-expanded="true"] .ico-seta { transform: rotate(180deg); }
+
+.nav-grupo { display: flex; flex-shrink: 0; }
+
+.nav-submenu {
+    position: fixed;
+    z-index: 200;
+    min-width: 170px;
+    padding: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    background: var(--navy-dark);
+    box-shadow: var(--shadow-lg);
+    animation: aparecer 0.15s ease;
+}
+
+.nav-sub {
+    display: block;
+    width: 100%;
+    padding: 9px 12px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #DCE7F5;
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.nav-sub:hover, .nav-sub:focus-visible { background: rgba(255, 255, 255, 0.1); color: #FFFFFF; outline: none; }
+.nav-sub.active { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; font-weight: 600; }
+.nav-sair { margin-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0 0 6px 6px; color: #FFB4AC; }
+
+.nav-btn:focus-visible { outline: 2px solid #8EC1FF; outline-offset: -2px; }
+
+
+/* =========================================================
+   REVERSA — memória de cálculo recolhível
+========================================================= */
+
+.rv-memoria {
+    margin-top: 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+.rv-memoria > summary {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 12px 14px;
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    color: var(--heading);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.rv-memoria > summary::-webkit-details-marker { display: none; }
+
+.rv-memoria > summary::before {
+    content: "";
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(-45deg);
+    transition: transform 0.15s;
+}
+
+.rv-memoria[open] > summary::before { transform: translateY(-3px) rotate(45deg); }
+.rv-memoria > summary small { color: var(--muted); font-size: 11px; font-weight: 500; }
+.rv-memoria > summary:hover { background: var(--blue-soft); }
+.rv-memoria > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.rv-memoria[open] > summary { border-bottom: 1px solid var(--border); }
+.rv-memoria .tabela-wrap { padding: 0; }
+
+
+/* =========================================================
+   LINHA DO TEMPO DO BOLETO (conferência em lote)
+   Verde = pode pagar · vermelho = zona de cartório
+========================================================= */
+
+table.tabela.lote-tab { min-width: 780px; }
+
+.tl-legenda {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    margin: 6px 0 10px;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.tl-legenda span { display: inline-flex; align-items: center; gap: 5px; }
+.tl-legenda em { margin-left: auto; color: var(--muted); font-style: normal; }
+
+.tl-legenda i, .tl-ponto { border-radius: 50%; }
+.tl-legenda i { width: 10px; height: 10px; display: inline-block; }
+.tl-legenda i.hoje { width: 3px; height: 12px; border-radius: 2px; background: var(--link); }
+
+.venc   { background: var(--heading); }
+.quinto { background: var(--amber); }
+.ultimo { background: var(--green); }
+.cart   { background: var(--red); }
+
+.lt-prazo { min-width: 150px; width: 170px; }
+
+.tl { position: relative; height: 22px; margin: 0 8px; }
+
+.tl-trilho {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    height: 6px;
+    transform: translateY(-50%);
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--border);
+}
+
+.tl-seg { position: absolute; top: 0; bottom: 0; }
+.tl-seg.ok { background: var(--green-border); }
+.tl-seg.cart { background: var(--red); opacity: 0.55; }
+
+.tl-ponto {
+    position: absolute;
+    top: 50%;
+    box-sizing: content-box;
+    width: 8px;
+    height: 8px;
+    margin: -6px 0 0 -6px;
+    border: 2px solid var(--surface);
+}
+
+.tl-hoje {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 3px;
+    margin-left: -1.5px;
+    border-radius: 2px;
+    background: var(--link);
+    box-shadow: 0 0 0 2px var(--surface);
+}
+
+.tl-hoje.antes, .tl-hoje.depois { opacity: 0.55; background: var(--muted); }
+
+.tl-hoje i {
+    position: absolute;
+    top: -15px; left: 50%;
+    transform: translateX(-50%);
+    color: var(--link);
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+tr.lt-linha { cursor: pointer; }
+tr.lt-linha:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+tr.lt-linha.aberta td { background: var(--blue-soft) !important; }
+
+tr.lt-detalhe td { padding: 62px 28px 46px !important; background: var(--surface-alt) !important; }
+tr.lt-detalhe:hover td { background: var(--surface-alt) !important; }
+
+.tl-grande { height: 26px; margin: 0; }
+.tl-grande .tl-trilho { height: 8px; border-radius: 4px; }
+.tl-grande .tl-ponto { width: 12px; height: 12px; margin: -8px 0 0 -8px; border-width: 2px; }
+
+.tl-rot {
+    position: absolute;
+    transform: translateX(-50%);
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.3;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.tl-rot b { display: block; color: var(--heading); font-size: 11px; }
+.tl-rot.baixo { top: 30px; }
+.tl-rot.cima  { bottom: 44px; }
+.tl-rot.esq { transform: none; text-align: left; margin-left: -6px; }
+.tl-rot.dir { transform: translateX(-100%); text-align: right; margin-right: -6px; }
+
+
+/* =========================================================
+   ACABAMENTO — foco visível e movimento reduzido
+========================================================= */
+
+:focus-visible { outline-color: var(--blue); }
+
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .view.active, .nav-submenu, .resultado { animation: none; }
+    .ico-seta, .rv-memoria > summary::before { transition: none; }
+}
