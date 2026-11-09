@@ -84,27 +84,30 @@ header {
 }
 
 .logo {
-    width: 38px !important;
-    height: 38px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    flex-shrink: 0 !important;
-    border-radius: var(--radius, 8px);
-    
-    /* Força fundo azul-escuro/slate e texto branco absoluto */
-    background: #0f172a !important;
-    background-color: #0f172a !important;
-    color: #ffffff !important;
-    
-    font-size: 13px !important;
-    font-weight: 800 !important;
-    letter-spacing: 0.02em !important;
-}
 
-/* Caso tenhas algum elemento de texto interno (como span ou p) dentro da div .logo */
-.logo * {
-    color: #ffffff !important;
+    width: 38px;
+
+    height: 38px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    flex-shrink: 0;
+
+    border-radius: var(--radius);
+
+    background: var(--surface);
+
+    color: var(--heading);
+
+    font-size: 13px;
+
+    font-weight: 800;
+
+    letter-spacing: 0.02em;
 }
 }
 }
