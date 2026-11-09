@@ -91,11 +91,15 @@ header {
     justify-content: center;
     flex-shrink: 0;
     border-radius: var(--radius);
-    background: #0284c7; /* Azul fixo de marca */
-    color: #ffffff;      /* Letras brancas fixas */
+    
+    /* Cores fixas para garantir contraste perfeito em qualquer tema */
+    background: #0f172a; /* Fundo azul escuro / slate */
+    color: #ffffff;      /* Letras "FS" em branco destacado */
+    
     font-size: 13px;
     font-weight: 800;
     letter-spacing: 0.02em;
+}
 }
 }
 
