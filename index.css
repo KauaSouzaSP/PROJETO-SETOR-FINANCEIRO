@@ -91,11 +91,12 @@ header {
     justify-content: center;
     flex-shrink: 0;
     border-radius: var(--radius);
-    background: var(--surface);
-    color: var(--heading);
+    background: #0284c7; /* Azul fixo de marca */
+    color: #ffffff;      /* Letras brancas fixas */
     font-size: 13px;
     font-weight: 800;
     letter-spacing: 0.02em;
+}
 }
 
 .brand { min-width: 170px; }
